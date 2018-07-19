@@ -6,3 +6,7 @@ A small ansible library to manage ssh user
 
 - In order to add a new user, create a new user on the hosts.yml, look like the hosts.yml sample
 - In order to remove a old user, change the state is absent.
+- Run with ansible playbook as:
+```
+ansible-playbook -i inventories/sample init.yml
+```
