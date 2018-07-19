@@ -1,0 +1,113 @@
+---
+# tasks file for admins
+
+- name: Ensure hostname set
+  hostname: name={{ inventory_hostname }}
+  when: not inventory_hostname is match('(\d{1,3}\.){3}\d{1,3}')
+
+- name: Ensure hostname is in /etc/hosts
+  lineinfile:
+    dest=/etc/hosts
+    regexp="^{{ ansible_default_ipv4.address }}.+$"
+    line="{{ ansible_default_ipv4.address }} {{ ansible_fqdn }} {{ ansible_hostname }}"
+
+- name: add group devops
+  group:
+    name: devops
+    system: yes
+    state: present
+
+- name: allow passwordless sudo to group devops
+  template:
+    src: sudoers-devops.j2
+    dest: /etc/sudoers.d/devops
+    owner: root
+    group: root
+    mode: 0400
+
+- name: add/remove users
+  user:
+    name: "{{ item.user }}"
+    group: "{{ item.group|default('users') }}"
+    groups: "{{ item.groups|default('devops') }}"
+    shell: "{{ item.shell|default('/bin/bash') }}"
+    state: "{{ item.state|default('absent') }}"
+  with_items:
+  - '{{ users }}'
+
+- name: set up keys
+  authorized_key:
+    user: '{{ item.user }}'
+    key: "{{ item.key|default(omit) }}"  
+    state: "{{ item.state|default('absent') }}"
+  when: "item.state == 'present'"
+  with_items:
+  - "{{ users }}"
+
+- name: home directory permissions
+  file:
+    path: "/home/{{ item.user }}"
+    owner: "{{ item.user }}"
+    #group: "{{ item.group }}"
+    mode: 0755
+    state: directory
+  when: "item.state == 'present'"
+  with_items:
+  - "{{ users }}"
+
+- name: .ssh directory permissions
+  file:
+    path: "/home/{{ item.user }}/.ssh"
+    owner: "{{ item.user }}"
+    #group: "{{ item.group }}"
+    mode: 0700
+    state: directory
+  when: "item.state == 'present'"
+  with_items:
+  - "{{ users }}"
+
+- name: authorized_keys permissions
+  file:
+    path: "/home/{{ item.user }}/.ssh/authorized_keys"
+    owner: "{{ item.user }}"
+    #group: "{{ item.group }}"
+    mode: 0644
+    state: file
+  when: "item.state == 'present'"
+  with_items:
+  - "{{ users }}"
+
+- name: Update SSH configuration to be more secure.
+  lineinfile:
+    dest: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    state: present
+  with_items:
+    - regexp: "^PasswordAuthentication"
+      line: "PasswordAuthentication {{ security_ssh_password_authentication }}"
+    - regexp: "^PermitRootLogin"
+      line: "PermitRootLogin {{ security_ssh_permit_root_login }}"
+    - regexp: "^ChallengeResponseAuthentication"
+      line: "ChallengeResponseAuthentication {{ security_ssh_challenge_response_auth }}"
+    - regexp: "^GSSAPIAuthentication"
+      line: "GSSAPIAuthentication {{ security_ssh_gss_api_authentication }}"
+    - regexp: "^X11Forwarding"
+      line: "X11Forwarding {{ security_ssh_x11_forwarding }}"
+  notify: reload sshd
+
+- name: Adding banner info in sshd.conf
+  lineinfile: 
+    dest: /etc/ssh/sshd_config 
+    regexp: '#Banner /etc/issue.net' 
+    line: "Banner /etc/issue.net"
+    state: present
+  notify: reload sshd
+  tags:
+    - ssh-banner-configuration
+
+- name: Update ssh banner
+  template: src=ssh-banner.j2 dest=/etc/issue.net
+  notify: reload sshd
+  tags:
+    - ssh-banner-configuration

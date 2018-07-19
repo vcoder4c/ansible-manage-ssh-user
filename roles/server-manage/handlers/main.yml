@@ -1,0 +1,7 @@
+---
+# handlers file for admins
+
+- name: reload sshd
+  service:
+    name: ssh
+    state: reloaded
